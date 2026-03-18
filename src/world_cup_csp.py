@@ -29,12 +29,40 @@ class WorldCupCSP:
         Verifica si asignar un equipo a un grupo viola
         las restricciones de confederación o tamaño del grupo.
         """
-        # TODO: implementar restricción de tamaño del grupo (máximo 4)
-        # TODO: implementar restricción de que no puede haber dos equipos del mismo bombo
-        # TODO: implementar restricción de confederaciones (máximo 1, excepto UEFA máximo 2)
+        FIFA = assignment.items()
+        
+        count = sum(1 for t, g in FIFA if g == group)
 
-        # Este es un valor de retorno por defecto, debes modificarlo
-        pass
+        # Implementado: implementar restricción de tamaño del grupo (máximo 4)
+        if count >= 4:
+            if self.debug:
+                print(f"Restricción de tamaño del grupo violada: {group} ya tiene 4 equipos.")
+            return False
+        
+
+        group_assigned = [t for t, g in FIFA if g == group]
+
+        for assigned_team in group_assigned:
+            if self.get_team_pot(assigned_team) == self.get_team_pot(team):
+                if self.debug:
+                    print(f"Restricción de bombo violada: {team} y {assigned_team} están en el mismo bombo.")
+                return False
+            else:
+                if self.get_team_confederation(assigned_team) == self.get_team_confederation(team):
+                    if self.get_team_confederation(team) == "UEFA":
+                        #para cada equipo de la UEFA solo se permiten dos equipos en el mismo grupo
+                        count_uefa = sum(1 for t in group_assigned if self.get_team_confederation(t) == "UEFA")
+                        if count_uefa >= 2:
+                            if self.debug:
+                                print(f"Restricción de confederación violada: {group} ya tiene 2 equipos de UEFA.")
+                            return False
+                    else:
+                        if self.debug:
+                            print(f"Restricción de confederación violada: {team} y {assigned_team} son de la misma confederación.")
+                        return False
+
+
+        return True
 
     def forward_check(self, assignment, domains):
         """
@@ -45,10 +73,21 @@ class WorldCupCSP:
         # Hacemos una copia de los dominios actuales para modificarla de forma segura
         new_domains = copy.deepcopy(domains)
 
-        # TODO: implementar forward checking para filtrar grupos inválidos
-        # en los dominios de las variables no asignadas.
+        for team in self.variables:
+            if team not in assignment:
+                #Para los equipos no asignados, filtramos sus dominios
+                #segun la asignacion actual
+                valid_groups = []
+                for group in new_domains[team]:
+                    if self.is_valid_assignment(group, team, assignment):
+                        valid_groups.append(group)
 
-        # Este es un valor de retorno por defecto, debes modificarlo
+                new_domains[team] = valid_groups
+                if not valid_groups:
+                    if self.debug:
+                        print(f"Dominio vacío para {team} después de forward checking.")
+                    return False, new_domains
+                
         return True, new_domains
 
     def select_unassigned_variable(self, assignment, domains):
@@ -57,28 +96,35 @@ class WorldCupCSP:
         Selecciona la variable no asignada con el dominio más pequeño.
         """
         # TODO: implementar MRV
-
         # Este es un valor de retorno por defecto, debes modificarlo
+        #listado de equipos no asignados
         unassigned_vars = [v for v in self.variables if v not in assignment]
-        return unassigned_vars[0] if unassigned_vars else None
+
+        min_count = 999999
+        team_min = None
+
+        for team in unassigned_vars:
+            if len(domains[team]) < min_count:
+                min_count = len(domains[team])
+                team_min = team
+        
+
+        return team_min if unassigned_vars else None
 
     def backtrack(self, assignment, domains=None):
-        """
-        Backtracking search para resolver el CSP.
-        """
         if domains is None:
             domains = copy.deepcopy(self.domains)
-
-        # Condición de parada: Si todas las variables están asignadas, retornamos la asignación.
         if len(assignment) == len(self.variables):
             return assignment
 
-        # TODO: implementar algoritmo de backtracking
-        # 1. Seleccionar variable con MRV
-        # 2. Iterar sobre sus valores (grupos) posibles en el dominio
-        # 3. Verificar si es válido, hacer la asignación y aplicar forward checking
-        # 4. Llamada recursiva
-        # 5. Deshacer la asignación si falla (backtrack)
-
-        # Este es un valor de retorno por defecto, debes modificarlo
+        var_team = self.select_unassigned_variable(assignment, domains)
+        for group in domains[var_team]:
+            if self.is_valid_assignment(group, var_team, assignment):
+                new_assignment = copy.deepcopy(assignment)
+                new_assignment[var_team] = group
+                success, new_domains = self.forward_check(new_assignment, domains)
+                if success:
+                    result = self.backtrack(new_assignment, new_domains)
+                    if result is not None:
+                        return result
         return None
